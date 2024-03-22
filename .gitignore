@@ -1,0 +1,5 @@
+# Experiment Results
+*.txt
+
+# Dataset under data folder
+data/
