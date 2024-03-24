@@ -7,7 +7,7 @@ class GATLayerWithIRCRWR(nn.Module):
     head_dim = 1       # attention head dim
 
     def __init__(self, num_in_features, num_out_features, num_of_heads, gamma=0.1, beta=1, concat=True, activation=nn.ELU(),
-                 dropout_prob=0.6, random_walk_with_restart=True, add_residual_connection=True, bias=True):
+                 dropout_prob=0.6, random_walk_with_restart=True, add_residual_connection=True, add_skip_connection=True, bias=True):
         super().__init__()
 
         self.num_of_heads = num_of_heads
@@ -15,6 +15,7 @@ class GATLayerWithIRCRWR(nn.Module):
         self.concat = concat  # whether we should concatenate or average the attention heads
         self.residual_connection = add_residual_connection
         self.random_walk_with_restart = random_walk_with_restart
+        self.add_skip_connection = add_skip_connection
         self.gamma = gamma # RWR의 재시작 확률
         self.beta = beta # residual connection의 가중치
 
@@ -52,6 +53,11 @@ class GATLayerWithIRCRWR(nn.Module):
             self.W_residual = nn.Linear(num_in_features, num_of_heads * num_out_features, bias=False)
         else:
             self.register_parameter('W_residual', None)
+
+        if add_skip_connection:
+            self.skip_proj = nn.Linear(num_in_features, num_of_heads * num_out_features, bias=False)
+        else:
+            self.register_parameter('skip_proj', None)
 
         #
         # End of trainable weights
@@ -138,7 +144,7 @@ class GATLayerWithIRCRWR(nn.Module):
         # Step 4: Residual/skip connections, concat and bias
         #
 
-        out_nodes_features = self.skip_concat_bias(out_nodes_features, initial_features_for_residual_connection)
+        out_nodes_features = self.skip_concat_bias(in_nodes_features, out_nodes_features, initial_features_for_residual_connection)
 
         return (out_nodes_features, edge_index, initial_features_for_random_walk, initial_features_for_residual_connection)
     
@@ -248,7 +254,17 @@ class GATLayerWithIRCRWR(nn.Module):
         # other 텐서와 같은 모양으로 확장하는데, 이 때 실제로 데이터를 복사하지는 않고, 필요에 따라 가상적으로 차원을 확장한다.
         return this.expand_as(other)
     
-    def skip_concat_bias(self, out_nodes_features, initial_features):
+    def skip_concat_bias(self, in_nodes_features, out_nodes_features, initial_features):
+        if self.add_skip_connection:  # add skip or residual connection
+            if out_nodes_features.shape[-1] == in_nodes_features.shape[-1]:  # if FIN == FOUT
+                # unsqueeze does this: (N, FIN) -> (N, 1, FIN), out features are (N, NH, FOUT) so 1 gets broadcast to NH
+                # thus we're basically copying input vectors NH times and adding to processed vectors
+                out_nodes_features += in_nodes_features.unsqueeze(1)
+            else:
+                # FIN != FOUT so we need to project input feature vectors into dimension that can be added to output
+                # feature vectors. skip_proj adds lots of additional capacity which may cause overfitting.
+                out_nodes_features += self.skip_proj(in_nodes_features).view(-1, self.num_of_heads, self.num_out_features)
+
         if self.residual_connection:  # add residual connection
             if out_nodes_features.shape[-1] == initial_features.shape[-1]:  # if FIN == FOUT
                 out_nodes_features += initial_features

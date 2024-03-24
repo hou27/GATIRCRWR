@@ -25,7 +25,7 @@ def get_training_args(time_start, dataset, train_range, val_range, test_range, n
     # Training related
     parser.add_argument("--num_of_epochs", type=int, help="number of training epochs", default=10000)
     parser.add_argument("--patience_period", type=int, help="number of epochs with no improvement on val before terminating", default=1000)
-    parser.add_argument("--lr", type=float, help="model learning rate", default=5e-3)
+    parser.add_argument("--lr", type=float, help="model learning rate", default=0.01)#5e-3)
     parser.add_argument("--weight_decay", type=float, help="L2 regularization on model weights", default=5e-4)
     parser.add_argument("--should_test", type=bool, help='should test the model on the test dataset?', default=True)
 
@@ -68,6 +68,7 @@ def get_training_args(time_start, dataset, train_range, val_range, test_range, n
     return training_config
 
 import time
+from utils.normalize_features_sparse import normalize_features_sparse
 
 
 def train_gat(config, save_to_file, filename):
@@ -78,7 +79,7 @@ def train_gat(config, save_to_file, filename):
     # Step 1: load the graph data
     # node_features, node_labels, edge_index, train_indices, val_indices, test_indices = load_graph_data(config, device)
     # Step 1: load the graph data
-    node_features = config["dataset"][0].x.to(device)
+    node_features = normalize_features_sparse(config["dataset"][0].x).to(device)
     node_labels = config["dataset"][0].y.to(device)
     edge_index = config["dataset"][0].edge_index.to(device)
 
