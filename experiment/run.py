@@ -73,7 +73,7 @@ import time
 def train_gat(config, save_to_file, filename):
     global BEST_VAL_ACC, BEST_VAL_LOSS
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  # checking whether you have a GPU, I hope so!
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Step 1: load the graph data
     # node_features, node_labels, edge_index, train_indices, val_indices, test_indices = load_graph_data(config, device)
