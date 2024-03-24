@@ -20,7 +20,7 @@ def save_to_file(filename, content):
         f.write(content)
 
 if __name__ == '__main__':
-    filename = f'{datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}_cora_test.txt'
+    filename = f'./experiment_result/{datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}_cora_test.txt'
     save_to_file(filename, 'Cora\n')
     dataset = Planetoid(root='../data/Cora', name='Cora')
     init_time_start = time.time()

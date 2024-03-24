@@ -19,7 +19,7 @@ def save_to_file(filename, content):
         f.write(content)
 
 if __name__ == '__main__':
-    filename = f'{datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}_citeseer_test.txt'
+    filename = f'./experiment_result/{datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}_citeseer_test.txt'
     save_to_file(filename, 'Citeseer\n')
     dataset = Planetoid(root='../data/Citeseer', name='Citeseer')
     init_time_start = time.time()
