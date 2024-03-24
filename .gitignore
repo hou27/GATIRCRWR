@@ -3,3 +3,6 @@
 
 # Dataset under data folder
 data/
+
+# pycache
+__pycache__/
