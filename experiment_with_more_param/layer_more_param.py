@@ -6,7 +6,7 @@ class GATLayerWithIRCRWR(nn.Module):
     nodes_dim = 0      # node dimension (axis is maybe a more familiar term nodes_dim is the position of "N" in tensor)
     head_dim = 1       # attention head dim
 
-    def __init__(self, num_in_features, num_out_features, num_of_heads, gamma=0.1, beta=1, concat=True, activation=nn.ELU(),
+    def __init__(self, num_in_features, num_out_features, num_of_heads, gamma=0.7, beta=0.5, concat=True, activation=nn.ELU(),
                  dropout_prob=0.6, random_walk_with_restart=True, add_residual_connection=True, add_skip_connection=True, bias=True):
         super().__init__()
 
@@ -73,7 +73,7 @@ class GATLayerWithIRCRWR(nn.Module):
         
     def forward(self, data):
         #
-        # Step 1: Linear Projection + regularization
+        # Linear Projection
         #
 
         in_nodes_features, edge_index, initial_features_for_random_walk, initial_features_for_residual_connection = data  # unpack data
@@ -102,7 +102,7 @@ class GATLayerWithIRCRWR(nn.Module):
         nodes_features_proj = self.dropout(nodes_features_proj) # 공식 GAT 구현에서도 dropout을 사용.
 
         #
-        # Step 2: Edge attention calculation
+        # Edge attention calculation
         #
 
         # Apply the scoring function (* represents element-wise (a.k.a. Hadamard) product)
@@ -128,7 +128,7 @@ class GATLayerWithIRCRWR(nn.Module):
         attentions_per_edge = self.dropout(attentions_per_edge)
 
         #
-        # Step 3: Neighborhood aggregation
+        # Neighborhood aggregation
         #
 
         # Element-wise (aka Hadamard) product. Operator * does the same thing as torch.mul
@@ -138,10 +138,11 @@ class GATLayerWithIRCRWR(nn.Module):
 
         # 이 부분은 각 노드의 이웃 노드의 특징을 가중합하여 계산한다.
         # shape = (노드 수, 헤드 수, 출력 특징 수)
+        # Aggregate multi-head attentions and Random Walk with Restart (optional)
         out_nodes_features = self.aggregate_neighbors(initial_features_for_random_walk, nodes_features_proj_lifted_weighted, edge_index, in_nodes_features, num_of_nodes)
 
         #
-        # Step 4: Residual/skip connections, concat and bias
+        # Skip connections (optional) and Initial Residual Connection (optional), concat and bias
         #
 
         out_nodes_features = self.skip_concat_bias(in_nodes_features, out_nodes_features, initial_features_for_residual_connection)

@@ -1,5 +1,8 @@
 import enum
 import argparse
+import time
+from datetime import datetime
+from torch_geometric.datasets import Planetoid
 
 import torch
 import torch.nn as nn
@@ -19,7 +22,7 @@ BEST_VAL_ACC = 0
 BEST_VAL_LOSS = 0
 
 
-def get_training_args(time_start, dataset, train_range, val_range, test_range, num_input_features, num_classes, random_walk_with_restart, add_residual_connection, num_of_additional_layer=0):
+def get_training_args(time_start, dataset, train_range, val_range, test_range, num_input_features, num_classes, gamma, beta, random_walk_with_restart, add_residual_connection, num_of_additional_layer=0):
     parser = argparse.ArgumentParser()
 
     # Training related
@@ -52,6 +55,8 @@ def get_training_args(time_start, dataset, train_range, val_range, test_range, n
         "train_range": train_range,
         "val_range": val_range,
         "test_range": test_range,
+        "gamma": gamma,
+        "beta": beta,
         "random_walk_with_restart": random_walk_with_restart,
         "add_residual_connection": add_residual_connection,
         "num_of_additional_layer": num_of_additional_layer
@@ -89,7 +94,7 @@ def train_gat(config, save_to_file, filename):
     test_indices = torch.arange(config["test_range"][0], config["test_range"][1], dtype=torch.long, device=device)
 
     # Step 2: prepare the model
-    gat = GATWithIRCRWR(config["num_of_additional_layer"], config["num_features_per_layer"][0], config["num_features_per_layer"][-1], random_walk_with_restart=config["random_walk_with_restart"], add_residual_connection=config["add_residual_connection"], bias=config["bias"], dropout=config["dropout"]).to(device)
+    gat = GATWithIRCRWR(config["num_of_additional_layer"], config["num_features_per_layer"][0], config["num_features_per_layer"][-1], gamma=config["gamma"], beta=config["beta"], random_walk_with_restart=config["random_walk_with_restart"], add_residual_connection=config["add_residual_connection"], bias=config["bias"], dropout=config["dropout"]).to(device)
     # gat = GAT(1433, 7, add_skip_connection=False, bias=True, dropout=0.6).to(device)
 
     # Step 3: Prepare other training related utilities (loss & optimizer and decorator function)
@@ -249,3 +254,23 @@ def get_main_loop(config, gat, cross_entropy_loss, optimizer, node_features, nod
             return accuracy  # in the case of test phase we just report back the test accuracy
 
     return main_loop  # return the decorated function
+
+def save_to_file(filename, content):
+    with open(filename, 'a') as f:
+        f.write(content)
+
+def run(dataset, train_range, val_range, test_range, num_input_features, num_classes, gamma, beta):
+    filename = f'./experiment_result/{datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}_{dataset}_test.txt'
+    save_to_file(filename, dataset+'\n')
+    dataset = Planetoid(root=f'../data/{dataset}', name=dataset)
+    init_time_start = time.time()
+    for i in range(4, 7):
+        cases = [[False, False, "GAT"], [True, False, "GAT with Random walk with restart"], [False, True, "GAT with Initial residual connection"], [True, True, "GAT with Random walk with restart and Initial residual connection"]]
+        for case in cases:
+            content = f"{i+2} layers {case[-1]}\n"
+            save_to_file(filename, content)
+            time_start = time.time()
+            content = train_gat(get_training_args(time_start, dataset, train_range, val_range, test_range, num_input_features, num_classes, gamma=gamma, beta=beta, random_walk_with_restart=case[0], add_residual_connection=case[1], num_of_additional_layer=i), save_to_file, filename)
+            save_to_file(filename, f'Total training time: {(time.time() - time_start):.2f} [s]\n')
+
+    save_to_file(filename, f'\n\nTotal training time for Full Process: {(time.time() - init_time_start):.2f} [s]\n')
