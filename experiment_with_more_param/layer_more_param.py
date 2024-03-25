@@ -54,7 +54,7 @@ class GATLayerWithIRCRWR(nn.Module):
         else:
             self.register_parameter('W_residual', None)
 
-        if add_skip_connection:
+        if add_skip_connection and not (add_residual_connection or random_walk_with_restart):
             self.skip_proj = nn.Linear(num_in_features, num_of_heads * num_out_features, bias=False)
         else:
             self.register_parameter('skip_proj', None)
@@ -255,7 +255,7 @@ class GATLayerWithIRCRWR(nn.Module):
         return this.expand_as(other)
     
     def skip_concat_bias(self, in_nodes_features, out_nodes_features, initial_features):
-        if self.add_skip_connection:  # add skip or residual connection
+        if self.add_skip_connection and not (self.residual_connection or self.random_walk_with_restart):  # add skip or residual connection
             if out_nodes_features.shape[-1] == in_nodes_features.shape[-1]:  # if FIN == FOUT
                 # unsqueeze does this: (N, FIN) -> (N, 1, FIN), out features are (N, NH, FOUT) so 1 gets broadcast to NH
                 # thus we're basically copying input vectors NH times and adding to processed vectors
