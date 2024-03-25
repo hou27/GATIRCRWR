@@ -9,3 +9,6 @@ __pycache__/
 
 # ipynb file
 *.ipynb
+
+# output file
+nohup.out
