@@ -25,7 +25,7 @@ def get_training_args(time_start, dataset, train_range, val_range, test_range, n
     # Training related
     parser.add_argument("--num_of_epochs", type=int, help="number of training epochs", default=10000)
     parser.add_argument("--patience_period", type=int, help="number of epochs with no improvement on val before terminating", default=1000)
-    parser.add_argument("--lr", type=float, help="model learning rate", default=0.01)#5e-3)
+    parser.add_argument("--lr", type=float, help="model learning rate", default=5e-3)
     parser.add_argument("--weight_decay", type=float, help="L2 regularization on model weights", default=5e-4)
     parser.add_argument("--should_test", type=bool, help='should test the model on the test dataset?', default=True)
 
@@ -89,7 +89,7 @@ def train_gat(config, save_to_file, filename):
     test_indices = torch.arange(config["test_range"][0], config["test_range"][1], dtype=torch.long, device=device)
 
     # Step 2: prepare the model
-    gat = GATWithIRCRWR(config["num_of_additional_layer"], config["num_features_per_layer"][0], config["num_features_per_layer"][-1], random_walk_with_restart=config["random_walk_with_restart"], add_residual_connection=config["add_residual_connection"], bias=True, dropout=0.6).to(device)
+    gat = GATWithIRCRWR(config["num_of_additional_layer"], config["num_features_per_layer"][0], config["num_features_per_layer"][-1], random_walk_with_restart=config["random_walk_with_restart"], add_residual_connection=config["add_residual_connection"], bias=config["bias"], dropout=config["dropout"]).to(device)
     # gat = GAT(1433, 7, add_skip_connection=False, bias=True, dropout=0.6).to(device)
 
     # Step 3: Prepare other training related utilities (loss & optimizer and decorator function)
