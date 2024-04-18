@@ -10,7 +10,7 @@ import torch.nn as nn
 from layer import GATLayerWithIRCRWR
 
 class GATWithIRCRWR(nn.Module):
-    def __init__(self, num_of_additional_layer, num_in_features, num_classes, random_walk_with_restart=True, add_residual_connection=True, bias=True, dropout=0.6):
+    def __init__(self, num_of_additional_layer, num_in_features, num_classes, gamma, beta, random_walk_with_restart=True, add_residual_connection=True, bias=True, dropout=0.6):
         super().__init__()
 
         additional_layers = []
@@ -21,6 +21,8 @@ class GATWithIRCRWR(nn.Module):
                     num_in_features=8*8,  # consequence of concatenation
                     num_out_features=8,
                     num_of_heads=8,
+                    gamma=gamma,
+                    beta=beta,
                     concat=True,
                     activation=nn.ELU(),
                     dropout_prob=dropout,
@@ -35,6 +37,8 @@ class GATWithIRCRWR(nn.Module):
                 num_in_features=num_in_features,  # consequence of concatenation
                 num_out_features=8,
                 num_of_heads=8,
+                gamma=gamma,
+                beta=beta,
                 concat=True,
                 activation=nn.ELU(),
                 dropout_prob=dropout,
@@ -59,5 +63,5 @@ class GATWithIRCRWR(nn.Module):
     # data is just a (in_nodes_features, edge_index) tuple, I had to do it like this because of the nn.Sequential:
     # https://discuss.pytorch.org/t/forward-takes-2-positional-arguments-but-3-were-given-for-nn-sqeuential-with-linear-layers/65698
     def forward(self, data):
-        data = data + (None,)
+        data = data + (None, None,)
         return self.gat_net(data)

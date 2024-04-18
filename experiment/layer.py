@@ -2,12 +2,11 @@ import torch
 import torch.nn as nn
 
 class GATLayerWithIRCRWR(nn.Module):
-    # These may change in the inductive setting - leaving it like this for now (not future proof)
-    nodes_dim = 0      # node dimension (axis is maybe a more familiar term nodes_dim is the position of "N" in tensor)
+    nodes_dim = 0      # node dimension
     head_dim = 1       # attention head dim
 
-    def __init__(self, num_in_features, num_out_features, num_of_heads, gamma=0.1, beta=1, concat=True, activation=nn.ELU(),
-                 dropout_prob=0.6, random_walk_with_restart=True, add_residual_connection=True, bias=True):
+    def __init__(self, num_in_features, num_out_features, num_of_heads, gamma=0.7, beta=0.5, concat=True, activation=nn.ELU(),
+                 dropout_prob=0.6, random_walk_with_restart=True, add_residual_connection=True, add_skip_connection=True, bias=True):
         super().__init__()
 
         self.num_of_heads = num_of_heads
@@ -15,6 +14,7 @@ class GATLayerWithIRCRWR(nn.Module):
         self.concat = concat  # whether we should concatenate or average the attention heads
         self.residual_connection = add_residual_connection
         self.random_walk_with_restart = random_walk_with_restart
+        self.add_skip_connection = add_skip_connection
         self.gamma = gamma # RWR의 재시작 확률
         self.beta = beta # residual connection의 가중치
 
@@ -43,10 +43,20 @@ class GATLayerWithIRCRWR(nn.Module):
         else:
             self.register_parameter('bias', None)
 
-        if self.residual_connection or self.random_walk_with_restart:
+        if self.random_walk_with_restart:
+            self.W_random_walk = nn.Linear(num_in_features, num_of_heads * num_out_features, bias=False)
+        else:
+            self.register_parameter('W_random_walk', None)
+
+        if self.residual_connection:
             self.W_residual = nn.Linear(num_in_features, num_of_heads * num_out_features, bias=False)
         else:
             self.register_parameter('W_residual', None)
+
+        if add_skip_connection and not (add_residual_connection or random_walk_with_restart):
+            self.skip_proj = nn.Linear(num_in_features, num_of_heads * num_out_features, bias=False)
+        else:
+            self.register_parameter('skip_proj', None)
 
         #
         # End of trainable weights
@@ -62,13 +72,19 @@ class GATLayerWithIRCRWR(nn.Module):
         
     def forward(self, data):
         #
-        # Step 1: Linear Projection + regularization
+        # Linear Projection
         #
 
-        in_nodes_features, edge_index, initial_features = data  # unpack data
-        if initial_features is None and (self.residual_connection or self.random_walk_with_restart):
-            initial_features = in_nodes_features
-            initial_features = self.W_residual(in_nodes_features).reshape(-1, self.num_of_heads, self.num_out_features)
+        in_nodes_features, edge_index, initial_features_for_random_walk, initial_features_for_residual_connection = data  # unpack data
+
+        # Save the initial features for random walk
+        if initial_features_for_random_walk is None and self.random_walk_with_restart:
+            initial_features_for_random_walk = self.W_random_walk(in_nodes_features).reshape(-1, self.num_of_heads, self.num_out_features)
+        
+        # Save the initial features for residual connection
+        if initial_features_for_residual_connection is None and self.residual_connection:
+            initial_features_for_residual_connection = self.W_residual(in_nodes_features).reshape(-1, self.num_of_heads, self.num_out_features)
+
         num_of_nodes = in_nodes_features.shape[self.nodes_dim]
         assert edge_index.shape[0] == 2, f'Expected edge index with shape=(2,E) got {edge_index.shape}'
 
@@ -85,7 +101,7 @@ class GATLayerWithIRCRWR(nn.Module):
         nodes_features_proj = self.dropout(nodes_features_proj) # 공식 GAT 구현에서도 dropout을 사용.
 
         #
-        # Step 2: Edge attention calculation
+        # Edge attention calculation
         #
 
         # Apply the scoring function (* represents element-wise (a.k.a. Hadamard) product)
@@ -111,7 +127,7 @@ class GATLayerWithIRCRWR(nn.Module):
         attentions_per_edge = self.dropout(attentions_per_edge)
 
         #
-        # Step 3: Neighborhood aggregation
+        # Neighborhood aggregation
         #
 
         # Element-wise (aka Hadamard) product. Operator * does the same thing as torch.mul
@@ -121,15 +137,16 @@ class GATLayerWithIRCRWR(nn.Module):
 
         # 이 부분은 각 노드의 이웃 노드의 특징을 가중합하여 계산한다.
         # shape = (노드 수, 헤드 수, 출력 특징 수)
-        out_nodes_features = self.aggregate_neighbors(initial_features, nodes_features_proj_lifted_weighted, edge_index, in_nodes_features, num_of_nodes)
+        # Aggregate multi-head attentions and Random Walk with Restart (optional)
+        out_nodes_features = self.aggregate_neighbors(initial_features_for_random_walk, nodes_features_proj_lifted_weighted, edge_index, in_nodes_features, num_of_nodes)
 
         #
-        # Step 4: Residual/skip connections, concat and bias
+        # Skip connections (optional) and Initial Residual Connection (optional), concat and bias
         #
 
-        out_nodes_features = self.skip_concat_bias(out_nodes_features, initial_features)
+        out_nodes_features = self.skip_concat_bias(in_nodes_features, out_nodes_features, initial_features_for_residual_connection)
 
-        return (out_nodes_features, edge_index, initial_features)
+        return (out_nodes_features, edge_index, initial_features_for_random_walk, initial_features_for_residual_connection)
     
     def reset_parameter(self):
         """
@@ -143,7 +160,9 @@ class GATLayerWithIRCRWR(nn.Module):
         nn.init.xavier_uniform_(self.linear_proj.weight)
         nn.init.xavier_uniform_(self.scoring_fn_target)
         nn.init.xavier_uniform_(self.scoring_fn_source)
-        if self.residual_connection or self.random_walk_with_restart:
+        if self.random_walk_with_restart:
+            nn.init.xavier_uniform_(self.W_random_walk.weight)
+        if self.residual_connection:
             nn.init.xavier_uniform_(self.W_residual.weight)
 
         if self.bias is not None:
@@ -235,7 +254,17 @@ class GATLayerWithIRCRWR(nn.Module):
         # other 텐서와 같은 모양으로 확장하는데, 이 때 실제로 데이터를 복사하지는 않고, 필요에 따라 가상적으로 차원을 확장한다.
         return this.expand_as(other)
     
-    def skip_concat_bias(self, out_nodes_features, initial_features):
+    def skip_concat_bias(self, in_nodes_features, out_nodes_features, initial_features):
+        if self.add_skip_connection and not (self.residual_connection or self.random_walk_with_restart):  # add skip or residual connection
+            if out_nodes_features.shape[-1] == in_nodes_features.shape[-1]:  # if FIN == FOUT
+                # unsqueeze does this: (N, FIN) -> (N, 1, FIN), out features are (N, NH, FOUT) so 1 gets broadcast to NH
+                # thus we're basically copying input vectors NH times and adding to processed vectors
+                out_nodes_features += in_nodes_features.unsqueeze(1)
+            else:
+                # FIN != FOUT so we need to project input feature vectors into dimension that can be added to output
+                # feature vectors. skip_proj adds lots of additional capacity which may cause overfitting.
+                out_nodes_features += self.skip_proj(in_nodes_features).view(-1, self.num_of_heads, self.num_out_features)
+
         if self.residual_connection:  # add residual connection
             if out_nodes_features.shape[-1] == initial_features.shape[-1]:  # if FIN == FOUT
                 out_nodes_features += initial_features
